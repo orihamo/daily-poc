@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily 5</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#101113">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Daily 5">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<style>
+:root{--paper:#101113;--surface:#1b1c1f;--line:#2e3034;--ink:#f0f0ec;--ink2:#c2c3be;--ink3:#a2a49f;--mark:#f4b41a;--on-mark:#17181a;--ok:#9cc791;--bad:#ff8a7e}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.55 system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+  padding:max(20px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom))}
+main{max-width:30rem;margin:0 auto}
+h1{font-size:1.6rem;line-height:1.2;margin:.4rem 0 .2rem}
+.sub{color:var(--ink2);margin:0 0 1.6rem}
+.head{display:flex;align-items:center;gap:14px}
+.head img{width:56px;height:56px;border-radius:12px;display:block}
+ol{margin:0 0 1.4rem;padding:0 1.3rem 0 0}
+li{margin:0 0 .8rem}
+.row{display:flex;justify-content:space-between;gap:12px;padding:.7rem 0;border-top:1px solid var(--line)}
+.row:last-of-type{border-bottom:1px solid var(--line)}
+.row span:first-child{color:var(--ink2)}
+.row span:last-child{font-weight:600;text-align:left}
+label{display:block;margin:1.4rem 0 .4rem;color:var(--ink2)}
+select{width:100%;min-height:48px;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 12px}
+button{width:100%;min-height:52px;margin-top:1rem;font:inherit;font-weight:700;color:var(--on-mark);background:var(--mark);border:0;border-radius:12px;padding:0 16px}
+button:disabled{opacity:.55}
+button:focus-visible,select:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.msg{min-height:1.6rem;margin:1rem 0 0}
+.msg.ok{color:var(--ok)}.msg.bad{color:var(--bad)}
+.small{color:var(--ink3);font-size:.9rem;margin-top:1.6rem}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <div class="head"><img src="icon-192.png" alt=""><div><h1>Daily 5</h1></div></div>
+  <p class="sub">חמש שאלות ביום, והתזכורת מגיעה מהאפליקציה עצמה.</p>
+
+  <section id="install" hidden>
+    <p><strong>צריך להוסיף למסך הבית פעם אחת:</strong></p>
+    <ol>
+      <li>פותחים את הדף הזה ב-Safari.</li>
+      <li>לוחצים על כפתור השיתוף (הריבוע עם החץ) ובוחרים <strong>הוספה למסך הבית</strong>.</li>
+      <li>סוגרים את Safari ופותחים את Daily 5 מהאייקון שנוסף.</li>
+    </ol>
+    <p class="small">אחרי שפותחים מהאייקון יופיע כאן כפתור התזכורת.</p>
+  </section>
+
+  <section id="app" hidden>
+    <div class="row"><span>פתיחה נוכחית</span><span id="now">-</span></div>
+    <div class="row"><span>פתיחה קודמת</span><span id="prev">-</span></div>
+    <div class="row"><span>הרשאת התראות</span><span id="perm">-</span></div>
+    <div class="row"><span>נשמר בשרת</span><span id="saved">לא</span></div>
+    <label for="hour">באיזו שעה להזכיר?</label>
+    <select id="hour"></select>
+    <button id="go" type="button">תזכירו לי</button>
+    <p id="msg" class="msg" role="status" aria-live="polite"></p>
+  </section>
+
+  <section id="unsupported" hidden>
+    <p>הדפדפן הזה לא תומך בהתראות מהאפליקציה. צריך iPhone עם iOS 16.4 ומעלה, ולפתוח מהאייקון במסך הבית.</p>
+  </section>
+</main>
+<script>
+"use strict";
+/* filled in at deploy time */
+var VAPID_PUBLIC = "BJYIG31aSFaCLjsKoyf--dY0Ge0OQTeRcqwmn7S6y4Khx8ubKuNDjyKuid3OCKSrhyv7LpS3sUIESQhkZMY0hYw";
+var SYNC_URL = "";
+
+function $(id){ return document.getElementById(id); }
+function store(k, v){
+  try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; }
+}
+function say(text, kind){ var m = $("msg"); m.textContent = text; m.className = "msg" + (kind ? " " + kind : ""); }
+function stamp(ts){
+  if (!ts) return "-";
+  var d = new Date(+ts), p = function(n){ return (n < 10 ? "0" : "") + n; };
+  return p(d.getDate()) + "." + p(d.getMonth() + 1) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function b64ToBytes(s){
+  var pad = "=".repeat((4 - s.length % 4) % 4), raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  var out = new Uint8Array(raw.length); for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i); return out;
+}
+function randomId(){
+  var a = new Uint8Array(32); crypto.getRandomValues(a);
+  return Array.prototype.map.call(a, function(b){ return (b < 16 ? "0" : "") + b.toString(16); }).join("");
+}
+function permText(p){ return p === "granted" ? "אושרה" : p === "denied" ? "נחסמה" : p === "default" ? "עוד לא נשאלנו" : "לא זמינה"; }
+
+var standalone = (window.navigator.standalone === true) || (window.matchMedia && matchMedia("(display-mode: standalone)").matches) ||
+  /[?&]preview\b/.test(location.search);
+var supported = ("serviceWorker" in navigator) && ("PushManager" in window) && ("Notification" in window);
+
+(function init(){
+  if (!standalone) { $("install").hidden = false; return; }
+  if (!supported) { $("unsupported").hidden = false; return; }
+  $("app").hidden = false;
+
+  var prev = store("lastLaunch"), now = Date.now();
+  store("prevLaunch", prev || "");
+  store("lastLaunch", String(now));
+  $("now").textContent = stamp(now);
+  $("prev").textContent = stamp(prev);
+  $("perm").textContent = permText(Notification.permission);
+  $("saved").textContent = store("saved") === "1" ? "כן" : "לא";
+
+  var sel = $("hour");
+  for (var h = 7; h <= 22; h++) { var o = document.createElement("option"); o.value = h; o.textContent = (h < 10 ? "0" : "") + h + ":00"; sel.appendChild(o); }
+  sel.value = store("hour") || "20";
+
+  navigator.serviceWorker.register("sw.js").catch(function(){ say("לא הצלחנו להפעיל את שירות ההתראות. נסו לסגור ולפתוח שוב.", "bad"); });
+  $("go").addEventListener("click", remind);
+})();
+
+function remind(){
+  var btn = $("go"); btn.disabled = true; say("רגע...");
+  if (Notification.permission === "denied") {
+    say("ההתראות חסומות. אפשר לשנות בהגדרות הטלפון, תחת Daily 5.", "bad"); btn.disabled = false; return;
+  }
+  var hour = +$("hour").value; store("hour", String(hour));
+  Notification.requestPermission().then(function(p){
+    $("perm").textContent = permText(p);
+    if (p !== "granted") { throw new Error("perm"); }
+    return navigator.serviceWorker.ready;
+  }).then(function(reg){
+    return reg.pushManager.getSubscription().then(function(s){
+      return s || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC) });
+    });
+  }).then(function(sub){
+    if (!SYNC_URL) { say("ההתראות אושרו. השרת עדיין לא מחובר, אז התזכורת עוד לא תגיע.", "bad"); return; }
+    var id = store("id"); if (!id) { id = randomId(); store("id", id); }
+    return fetch(SYNC_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ id: id, sub: sub.toJSON(), hour: hour }) })
+      .then(function(r){ return r.json(); }).then(function(j){
+        if (!j.ok) throw new Error(j.error || "server");
+        store("saved", "1"); $("saved").textContent = "כן";
+        say("סגור. נזכיר בשעה " + (hour < 10 ? "0" : "") + hour + ":00 אם עוד לא סיימתם.", "ok");
+      });
+  }).catch(function(e){
+    if (e && e.message === "perm") say("בלי הרשאה אי אפשר להזכיר. אפשר לנסות שוב.", "bad");
+    else say("משהו השתבש (" + (e && e.message ? e.message : "שגיאה") + "). נסו שוב בעוד רגע.", "bad");
+  }).then(function(){ btn.disabled = false; });
+}
+</script>
+</body>
+</html>
