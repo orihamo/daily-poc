@@ -59,7 +59,7 @@ button:focus-visible,select:focus-visible{outline:3px solid var(--ink);outline-o
     <div class="row"><span>פתיחה נוכחית</span><span id="now">-</span></div>
     <div class="row"><span>פתיחה קודמת</span><span id="prev">-</span></div>
     <div class="row"><span>הרשאת התראות</span><span id="perm">-</span></div>
-    <div class="row"><span>נשמר בשרת</span><span id="saved">לא</span></div>
+    <div class="row"><span>נשלח לשרת</span><span id="saved">לא</span></div>
     <label for="hour">באיזו שעה להזכיר?</label>
     <select id="hour"></select>
     <button id="go" type="button">תזכירו לי</button>
@@ -74,7 +74,8 @@ button:focus-visible,select:focus-visible{outline:3px solid var(--ink);outline-o
 "use strict";
 /* filled in at deploy time */
 var VAPID_PUBLIC = "BJYIG31aSFaCLjsKoyf--dY0Ge0OQTeRcqwmn7S6y4Khx8ubKuNDjyKuid3OCKSrhyv7LpS3sUIESQhkZMY0hYw";
-var SYNC_URL = "";
+var FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdx6YR36K56lZRU0dQ-28bUFb7XwZ_qok4PD-xdkXvPrfnY_A/formResponse";
+var FORM_FIELDS = { id: "entry.1596408415", sub: "entry.691292505", hour: "entry.1565611198" };
 
 function $(id){ return document.getElementById(id); }
 function store(k, v){
@@ -111,7 +112,7 @@ var supported = ("serviceWorker" in navigator) && ("PushManager" in window) && (
   $("now").textContent = stamp(now);
   $("prev").textContent = stamp(prev);
   $("perm").textContent = permText(Notification.permission);
-  $("saved").textContent = store("saved") === "1" ? "כן" : "לא";
+  $("saved").textContent = store("saved") === "1" ? "נשלח" : "לא";
 
   var sel = $("hour");
   for (var h = 7; h <= 22; h++) { var o = document.createElement("option"); o.value = h; o.textContent = (h < 10 ? "0" : "") + h + ":00"; sel.appendChild(o); }
@@ -136,15 +137,14 @@ function remind(){
       return s || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC) });
     });
   }).then(function(sub){
-    if (!SYNC_URL) { say("ההתראות אושרו. השרת עדיין לא מחובר, אז התזכורת עוד לא תגיע.", "bad"); return; }
     var id = store("id"); if (!id) { id = randomId(); store("id", id); }
-    return fetch(SYNC_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ id: id, sub: sub.toJSON(), hour: hour }) })
-      .then(function(r){ return r.json(); }).then(function(j){
-        if (!j.ok) throw new Error(j.error || "server");
-        store("saved", "1"); $("saved").textContent = "כן";
-        say("סגור. נזכיר בשעה " + (hour < 10 ? "0" : "") + hour + ":00 אם עוד לא סיימתם.", "ok");
-      });
+    var body = new URLSearchParams();
+    body.set(FORM_FIELDS.id, id); body.set(FORM_FIELDS.sub, JSON.stringify(sub.toJSON())); body.set(FORM_FIELDS.hour, String(hour));
+    /* a Google Form answers a cross-site post with an opaque reply, so success cannot be read back here */
+    return fetch(FORM_URL, { method: "POST", mode: "no-cors", body: body }).then(function(){
+      store("saved", "1"); $("saved").textContent = "נשלח";
+      say("סגור. נזכיר בשעה " + (hour < 10 ? "0" : "") + hour + ":00 אם עוד לא סיימתם.", "ok");
+    });
   }).catch(function(e){
     if (e && e.message === "perm") say("בלי הרשאה אי אפשר להזכיר. אפשר לנסות שוב.", "bad");
     else say("משהו השתבש (" + (e && e.message ? e.message : "שגיאה") + "). נסו שוב בעוד רגע.", "bad");
